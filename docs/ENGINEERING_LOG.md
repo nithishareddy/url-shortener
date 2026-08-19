@@ -33,7 +33,7 @@ workflow itself.
   testing) happened freely; anything that touches shared state (git history) is a separate,
   explicit approval step.
 
-## Generated as-is vs. edited vs. rejected
+## Developer decisions made while working with AI
 
 | Item | Outcome | Rationale |
 |---|---|---|
