@@ -151,14 +151,6 @@ If none of these fix it, run the build with more detail and share the actual err
 mvn clean verify -e
 ```
 
-## Optional: running with Postgres instead of the built-in database
-
-Not required for normal use, but if you want to test against a real database:
-
-```bash
-docker compose up -d
-mvn spring-boot:run -Dspring-boot.run.profiles=postgres
-```
 
 ## Project structure
 
