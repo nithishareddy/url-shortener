@@ -1,6 +1,6 @@
 # Three Scenarios: Greenfield, Ambiguous, Brownfield
 
-The assignment asks for three worked scenarios, each showing decomposition, execution, and
+This project called for three worked scenarios, each showing decomposition, execution, and
 validation. Rather than construct three artificial examples, these are the three real phases the
 codebase was actually built in — each commit-worthy on its own, each building on the last. Git
 history (once committed, see the note at the end) reflects this directly.
@@ -11,7 +11,7 @@ history (once committed, see the note at the end) reflects this directly.
 
 ### Requirement understanding
 
-The assignment asks for "core APIs" for a URL shortener. Normalized: given a long URL, produce a
+The brief asks for "core APIs" for a URL shortener. Normalized: given a long URL, produce a
 short code; given a short code, redirect to the long URL. Nothing else is load-bearing for a first
 working slice — no analytics, no expiry, no auth, no custom naming.
 
@@ -59,7 +59,7 @@ explicitly rather than silently shipped; addressed in Scenario 3.
 
 ### Requirement understanding (normalizing the ambiguity)
 
-The assignment scope says "core APIs, analytics, and reliability features" — "analytics" is never
+The project scope says "core APIs, analytics, and reliability features" — "analytics" is never
 defined further. Questions that needed answers before writing code:
 
 - **What's tracked?** Redirect events only (creation events aren't a meaningful engagement metric
@@ -125,7 +125,7 @@ defined further. Questions that needed answers before writing code:
 
 ### Requirement understanding
 
-The assignment scope explicitly calls for "reliability features," and the brownfield category
+The project scope explicitly calls for "reliability features," and the brownfield category
 covers enhancements/refactors/bug fixes against existing code. By this point the service already
 had two real gaps worth treating as brownfield work rather than upfront design: the SSRF surface
 from Scenario 1, and (found during this pass, before it shipped) a cache/expiry interaction bug.

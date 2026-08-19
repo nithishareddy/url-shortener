@@ -79,11 +79,11 @@ Package layout (`src/main/java/com/schwab/urlshortener/`):
 
 ## Why three build phases, not one
 
-The codebase was built in three passes that map directly to the assignment's three required
-scenarios (see `docs/SCENARIOS.md` for the full decomposition/execution/validation for each):
+The codebase was built in three passes that map directly to the three required scenarios (see
+`docs/SCENARIOS.md` for the full decomposition/execution/validation for each):
 
 1. **Greenfield**: minimal create + redirect, generated codes only, basic URL-format validation.
-2. **Ambiguous → Analytics**: the assignment's "analytics" requirement had no spec; it's normalized
+2. **Ambiguous → Analytics**: the "analytics" requirement had no spec; it's normalized
    and built as click-event tracking + aggregation.
 3. **Brownfield hardening**: custom alias, expiry/soft-delete, SSRF validation, rate limiting, and
    caching added as real enhancements to the already-working service (schema evolves via `V3__...sql`

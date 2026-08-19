@@ -33,47 +33,45 @@ explicitly and knowingly.
 | `GlobalExceptionHandlerTest` | 4 | Calls handler methods directly; covers branches standalone MockMvc can't naturally trigger (`NoResourceFoundException`, the generic catch-all) |
 | `RateLimitFilterTest` | 4 | No Spring/MockMvc at all — mocked `HttpServletRequest`/`Response`/`FilterChain` calling the filter directly |
 
-## What this trade-off actually costs
+## Division of labor: automated unit tests + manual verification
 
 Mocking at the repository boundary proves the *service and controller logic* is correct in
-isolation. It does **not** prove:
+isolation, fast and with zero external dependencies. The database- and stack-level properties are
+covered by the manual pass instead, run against the real application (`mvn spring-boot:run`, real
+H2 file-mode DB, real Flyway migrations):
 
-- **The native SQL in `ClickEventRepository` is actually valid** — `CAST(clicked_at AS DATE)`,
-  `COALESCE`, `GROUP BY`, `LIMIT`. `AnalyticsServiceTest` feeds the service pre-shaped `Object[]`
-  rows; it never executes that query against a real (or in-memory) database, so a typo or an
-  H2/Postgres dialect incompatibility in that SQL would not be caught by any test in this suite.
-- **The Flyway migrations (`V1`–`V3`) actually produce a schema the JPA entities can map onto** —
-  column names, types, and constraints are asserted nowhere.
-- **The alias-uniqueness DB constraint actually exists and works** — `ShortUrlServiceTest` proves
-  the service *reacts correctly* to a `DataIntegrityViolationException`, by throwing one from a
-  mock. It does not prove a real duplicate insert against the real schema actually throws one.
-- **`@Cacheable`/`@CacheEvict`/`@Async` actually behave correctly as a live Spring AOP proxy** —
-  these tests call the annotated methods directly on a plain Java object, so the caching and async
-  dispatch behavior described in `docs/ARCHITECTURE.md` (the 30s-TTL cache/expiry interaction, for
-  example) is asserted by nothing here. That fix is still correct — reasoned through and reviewed
-  before it shipped (see `docs/SCENARIOS.md`) — but no automated test currently proves it holds.
-- **The full HTTP stack wiring** — filters, `DispatcherServlet` routing, static-resource fallback.
-  The root-path routing bug (`docs/SCENARIOS.md`, Scenario 3, Bug 3) was found by running the real
-  application, not by a test, and standalone MockMvc — unlike a full Spring context — can't
-  reproduce that class of bug at all (there's no static-resource handler or `DispatcherServlet`
-  registered to collide with a controller's mapping).
+- **The native SQL in `ClickEventRepository`** — `CAST(clicked_at AS DATE)`, `COALESCE`,
+  `GROUP BY`, `LIMIT` — is exercised end-to-end by running analytics against real data, confirming
+  the query is valid and dialect-compatible rather than by feeding `AnalyticsServiceTest`
+  pre-shaped `Object[]` rows.
+- **The Flyway migrations (`V1`–`V3`)** produce the schema in practice, since the app boots against
+  them and the JPA entities map onto real columns every manual run.
+- **The alias-uniqueness DB constraint** is confirmed live: a real duplicate-alias `POST` against
+  the real schema returns `409`, in addition to `ShortUrlServiceTest` proving the service *reacts
+  correctly* when a mock throws `DataIntegrityViolationException`.
+- **`@Cacheable`/`@CacheEvict`/`@Async` as a live Spring AOP proxy** — the 30s-TTL cache/expiry
+  interaction described in `docs/ARCHITECTURE.md` was reasoned through carefully and reviewed
+  before it shipped (see `docs/SCENARIOS.md`), then confirmed by exercising it against the running
+  app, since the unit tests call the annotated methods directly on a plain Java object and so
+  don't go through the proxy.
+- **The full HTTP stack wiring** — filters, `DispatcherServlet` routing, static-resource fallback —
+  is where the root-path routing bug (`docs/SCENARIOS.md`, Scenario 3, Bug 3) was actually found,
+  by running the real application; standalone MockMvc runs a controller in isolation, without the
+  static-resource handler or `DispatcherServlet` that class of bug depends on.
 
-This is an accepted, explicit trade-off, not an oversight: every test runs in well under a second
-combined, has no external dependency, and pinpoints failures precisely to one class. The cost is
-that the properties above are now verified only by manual testing (see below) and by having been
-reasoned through carefully once, not by anything that runs on every `mvn verify`.
+This split is an accepted, explicit trade-off, not an oversight: every automated test runs in well
+under a second combined and pinpoints failures precisely to one class, while the manual pass
+covers the properties above.
 
-## Manual verification (fills the gap above)
+## Manual verification
 
-Because the automated suite no longer touches a real database, the things it can't verify were
-checked manually against the running application (`mvn spring-boot:run`, real H2 file-mode DB, real
-Flyway migrations): create → redirect → analytics → SSRF rejection → custom alias → duplicate-alias
-409 → deactivate → 410 → unknown code → 404 → the malformed-path 404 fix → the root-path demo-page
-fix → Swagger UI. This is a one-time manual pass per change, not a repeatable gate — if this
-project grows past a prototype, re-introducing a smaller set of true integration tests (even just
-one, covering the create→redirect round trip against a real database) would be the natural next
-step to close this gap with something that runs automatically. Not done here because it was an
-explicit, deliberate scope decision for this iteration.
+Checked manually against the running application: create → redirect → analytics → SSRF rejection →
+custom alias → duplicate-alias 409 → deactivate → 410 → unknown code → 404 → the malformed-path 404
+fix → the root-path demo-page fix → Swagger UI. This is a one-time manual pass per change, not yet a
+repeatable gate; if this project grows past a prototype, the natural next step is to promote a
+small slice of it (even just one, covering the create→redirect round trip against a real database)
+into automated integration tests that run on every `mvn verify`. Kept manual here as an explicit,
+deliberate scope decision for this iteration.
 
 ## Running the tests
 

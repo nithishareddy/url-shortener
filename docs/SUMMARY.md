@@ -2,12 +2,11 @@
 
 ## Plan and rationale
 
-Built a Spring Boot 3 / Java 21 URL shortener in three phases mapped directly to the assignment's
-three required scenarios (see `docs/SCENARIOS.md` for full decomposition/execution/validation of
-each):
+Built a Spring Boot 3 / Java 21 URL shortener in three phases mapped directly to the three required
+scenarios (see `docs/SCENARIOS.md` for full decomposition/execution/validation of each):
 
 1. **Greenfield** — core create + redirect, generated codes only.
-2. **Ambiguous** — the assignment's undefined "analytics" requirement, normalized into a concrete
+2. **Ambiguous** — the undefined "analytics" requirement, normalized into a concrete
    spec (click-event log, async recording, read-time aggregation) before being built.
 3. **Brownfield** — reliability hardening (custom alias, expiry/soft-delete, SSRF validation, rate
    limiting, caching) layered onto the already-working service via an additive schema migration and
@@ -40,15 +39,15 @@ first, and the cache/expiry interaction was reasoned through specifically becaus
 | Click analytics are at-most-once (async, best-effort) | Failures are logged, never surfaced to the redirect response | Undercounting under crash/failure; acceptable for analytics, would not be acceptable for billing-grade metering |
 | Rate limiting and caching are single-instance (in-memory) | Documented, not built out | Won't hold cluster-wide under horizontal scale-out without a shared store (Redis-backed Bucket4j / distributed cache) |
 | SSRF guard doesn't re-validate existing rows or defend DNS-rebinding after validation | Guard applied at creation time for all new links | Pre-existing (pre-hardening) rows and TOCTOU DNS-rebinding are out of scope for this prototype's threat model |
-| No auth/multi-tenancy | Out of scope per the assignment; not silently assumed | Anyone can create/deactivate any link; would need auth before this is internet-facing for real users |
+| No auth/multi-tenancy | Out of scope by design; not silently assumed | Anyone can create/deactivate any link; would need auth before this is internet-facing for real users |
 | `click_event` has no retention policy | None — accepted for prototype scope | Unbounded storage growth over time in a real deployment |
 
 ## Assumptions
 
-- No user accounts/auth — the assignment didn't call for multi-tenancy, and adding it would have
-  meaningfully expanded scope without a clear requirement driver.
+- No user accounts/auth — multi-tenancy wasn't called for, and adding it would have meaningfully
+  expanded scope without a clear requirement driver.
 - Short codes and custom aliases share one namespace (a generated code can't collide with a
-  custom alias) — simpler than partitioning them, and the assignment gave no reason to keep them
+  custom alias) — simpler than partitioning them, and there was no reason to keep them
   separate.
 - "Analytics" means engagement metrics on redirects, not business/revenue analytics — the
   reasonable reading for a link shortener with no purchase/conversion concept.
