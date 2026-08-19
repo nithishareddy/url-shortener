@@ -98,8 +98,9 @@ mvn verify
 ```
 
 This runs all automated tests, checks code formatting, and creates a coverage report at
-`target/site/jacoco/index.html`. See [`docs/TESTING.md`](docs/TESTING.md) for details on what's
-tested.
+`target/site/jacoco/index.html`. All tests are Mockito-based unit tests — none of them hit a real
+database, so `mvn verify` never needs H2, Postgres, or Docker running. See
+[`docs/TESTING.md`](docs/TESTING.md) for the full breakdown and what that trade-off costs.
 
 ## Common build errors, and how to fix them
 

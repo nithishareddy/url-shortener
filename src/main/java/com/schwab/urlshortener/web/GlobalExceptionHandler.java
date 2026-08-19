@@ -13,6 +13,7 @@ import org.springframework.http.ProblemDetail;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 @RestControllerAdvice
 public class GlobalExceptionHandler {
@@ -41,6 +42,15 @@ public class GlobalExceptionHandler {
   @ExceptionHandler(AliasConflictException.class)
   public ProblemDetail handleConflict(AliasConflictException e) {
     return ProblemDetail.forStatusAndDetail(HttpStatus.CONFLICT, e.getMessage());
+  }
+
+  @ExceptionHandler(NoResourceFoundException.class)
+  public ProblemDetail handleNoRouteMatched(NoResourceFoundException e) {
+    // Thrown by Spring itself when no controller or static resource matches the request path
+    // (e.g. a malformed URL such as a missing leading slash). This is a routine 404, not an
+    // application error, so it deliberately isn't logged at ERROR level like the catch-all below.
+    return ProblemDetail.forStatusAndDetail(
+        HttpStatus.NOT_FOUND, "No such route: " + e.getResourcePath());
   }
 
   @ExceptionHandler(MethodArgumentNotValidException.class)

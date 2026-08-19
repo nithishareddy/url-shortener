@@ -42,8 +42,9 @@ working slice — no analytics, no expiry, no auth, no custom naming.
 
 - `ShortCodeGeneratorTest`: determinism, uniqueness over 10k ids, minimum length, URL-safe
   character set.
-- `ShortUrlFlowIT`: create→redirect happy path, blank URL rejected, non-http(s) scheme rejected,
-  unknown code → 404.
+- `ShortUrlServiceTest` / `ShortUrlControllerTest` / `RedirectControllerTest` (Mockito-mocked, no
+  DB — see `docs/TESTING.md`): create→redirect happy path, blank URL rejected, non-http(s) scheme
+  rejected, unknown code → 404.
 - Manual: `mvn spring-boot:run`, curl create + redirect, confirmed `Location` header matches input.
 
 ### Risk / limitation carried forward
@@ -95,16 +96,21 @@ defined further. Questions that needed answers before writing code:
 - The aggregation queries were written as native SQL (`CAST(clicked_at AS DATE)`, `COALESCE`,
   `GROUP BY`) rather than JPQL, specifically checked for portability across H2 and Postgres (both
   support this ANSI-standard syntax) since the app supports both as datasource profiles.
-- Testing async code without flakiness: rather than polling/sleeping in the test, the test profile
-  swaps in a synchronous `Executor` bean (`SyncTaskExecutor`) via `@TestConfiguration`, so the click
-  write is guaranteed complete before assertions run — deterministic, not timing-dependent.
+- Testing async code without flakiness: `ClickTrackingServiceTest` calls `recordClick` directly on
+  a plain (non-Spring-proxied) instance, so it runs synchronously in the test — there's no `@Async`
+  dispatch to race against. This sidesteps flakiness entirely but, per `docs/TESTING.md`, also means
+  no automated test currently proves the real `@Async` proxy dispatches onto the dedicated executor
+  as configured; that's verified by manual testing instead.
 
 ### Validation
 
-- `AnalyticsFlowIT`: create → 3 redirects (2 with the same referrer) → analytics shows
-  `totalClicks=3` and the referrer with 2 clicks ranked first. Unknown code → 404.
-- Manual: curl redirect twice with different `Referer` headers, confirmed the analytics response
-  reflected both.
+- `AnalyticsServiceTest` (Mockito-mocked repositories, no DB): given synthetic rows shaped like the
+  native queries' output, assembles the correct `totalClicks`/`clicksByDay`/`topReferrers`; unknown
+  code → `ShortUrlNotFoundException`. `ClickTrackingServiceTest`: records a click with the given
+  details; swallows a repository failure rather than propagating it.
+- Manual: created a link, curled the redirect twice with different `Referer` headers, confirmed the
+  analytics response reflected both — this is also where the native SQL and Flyway schema were
+  actually exercised, since the automated suite no longer does (`docs/TESTING.md`).
 
 ### Risk / limitation carried forward
 
@@ -178,24 +184,36 @@ mechanism internally forwards `/` → `/index.html`, and that forwarded request 
 Fixed with an explicit `@GetMapping("/")` in a new `HomeController` that serves the file directly
 (not via forward, to avoid re-entering the same collision) — an exact-literal mapping ranks above a
 path-variable mapping within the same handler mapping, so it wins. A regression test
-(`rootServesDemoPageInsteadOfBeingSwallowedByRedirectRoute`) locks this in. This is the clearest
-example in the whole build of validation (not code review) catching something review alone would
-likely have missed — it only surfaced by actually running the app and hitting it with a browser/curl.
+(`RoutingTest`) locks this in — registering `HomeController` and `RedirectController` together
+under one standalone `MockMvc` dispatcher, since testing either controller in isolation (as
+`HomeControllerTest`/`RedirectControllerTest` do) can't reproduce a collision that only exists when
+both share one routing table. This is the clearest example in the whole build of validation (not
+code review) catching something review alone would likely have missed — it only surfaced by
+actually running the app and hitting it with a browser/curl.
 
 ### Validation
 
-- `HardeningFlowIT`: custom alias honored, duplicate alias → 409, reserved alias → 400, loopback
-  target → 400, expired link → 410, deactivated link → 410.
-- `RateLimitFlowIT`: exceeding the configured create-limit → 429 (own Spring context with a
-  tightened limit via `@TestPropertySource`, so it doesn't interact with other tests' request
-  volume).
+Test suite was rewritten mid-project to be fully Mockito-mocked with no database anywhere (an
+explicit engineering decision — see `docs/TESTING.md` for what that costs and why it was accepted
+anyway):
+
+- `ShortUrlServiceTest`: custom alias honored, duplicate alias (pre-check and the DB-constraint-race
+  path) → `AliasConflictException`, reserved alias → `InvalidAliasException`, unsafe URL rejected,
+  expired/deactivated link → `ShortUrlGoneException`.
+- `ShortUrlControllerTest` / `RedirectControllerTest`: the same scenarios asserted at the HTTP layer
+  (409/400/410) against a mocked service.
+- `RateLimitFilterTest`: exceeding the configured limit → `429`, direct unit test on the filter
+  (mocked servlet request/response/chain, no MockMvc or Spring context at all).
 - `UrlSafetyValidatorTest`: unit-level coverage of the SSRF guard's decision logic in isolation.
-- Manual end-to-end (`mvn spring-boot:run` + curl): create → redirect → analytics → SSRF-rejected
-  create → custom alias → duplicate-alias 409 → deactivate → 410 → unknown code → 404 → demo page at
-  `/` → Swagger UI at `/swagger-ui/index.html`. All confirmed against the running app, not just
-  tests (this is where Bug 3 above was actually found).
-- Full quality gate: `mvn verify` — unit + integration tests, Spotless format check, JaCoCo coverage
-  report, all green.
+- `RoutingTest`: the root-path regression above.
+- Manual end-to-end (`mvn spring-boot:run` + curl, against the real H2-backed app): create →
+  redirect → analytics → SSRF-rejected create → custom alias → duplicate-alias 409 → deactivate →
+  410 → unknown code → 404 → demo page at `/` → Swagger UI at `/swagger-ui/index.html`. This is the
+  layer that now exercises the real Flyway schema, native SQL, and cache/DB interaction — none of
+  which the (now fully mocked) automated suite touches any more (`docs/TESTING.md`), and it's also
+  where Bug 3 above was actually found.
+- Full quality gate: `mvn verify` — unit tests, Spotless format check, JaCoCo coverage report, all
+  green.
 
 ### Risk / limitation carried forward
 

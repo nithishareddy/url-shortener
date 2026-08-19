@@ -1,68 +1,79 @@
 # Testing Approach, Limitations, Trade-offs
 
-## Approach
+## Current approach: fully mocked, no database anywhere
 
-Two layers, run by two Maven plugins so they're clearly distinguished and both run on `mvn verify`:
+Every test in this suite is a pure unit test. The repository/persistence layer is mocked with
+Mockito, and controllers are tested with **standalone MockMvc** (`MockMvcBuilders.standaloneSetup`)
+against a manually-constructed controller and mocked service — not `@SpringBootTest` or
+`@WebMvcTest`. Concretely, that means:
 
-| Layer | Naming | Plugin | What it covers |
-|---|---|---|---|
-| Unit | `*Test` | Surefire | Pure logic with no Spring context: `ShortCodeGenerator`, `UrlSafetyValidator` |
-| Integration | `*IT` | Failsafe | Full Spring context + `MockMvc`, real H2 database, real Flyway migrations |
+- No `ApplicationContext` is bootstrapped by any test.
+- No `DataSource`/H2/Postgres connection is ever opened.
+- No Flyway migration ever runs during a test.
+- Nothing under `src/test/` reaches the database, in-memory or otherwise.
 
-Integration tests use an in-memory H2 database (`spring.profiles.active=test`) so they run without
-any external service, and go through the actual HTTP layer (`MockMvc`) rather than calling services
-directly — this exercises validation, exception mapping, and status codes exactly as a real client
-would see them, not just the service-layer logic.
+This was a deliberate change from an earlier version of this suite that used `@SpringBootTest` +
+an in-memory H2 database for integration-style tests (`*IT` classes under `integration/`). See
+"What this trade-off actually costs" below — that's not a hidden regression, it's a decision made
+explicitly and knowingly.
 
-## Current coverage (24 tests)
+## Test inventory (51 tests)
 
-| Class | Tests | Focus |
+| Class | Tests | What it mocks / how it avoids the DB |
 |---|---|---|
-| `ShortCodeGeneratorTest` | 4 | Determinism, uniqueness at scale, min length, character set |
-| `UrlSafetyValidatorTest` | 6 | SSRF guard: valid URLs pass; malformed, non-http(s), loopback, RFC1918, and link-local metadata targets are rejected |
-| `ShortUrlFlowIT` | 5 | Create→redirect happy path, blank/non-http(s) URL rejected, unknown code 404, root path regression |
-| `AnalyticsFlowIT` | 2 | Async-recorded clicks reflected in analytics, unknown code 404 |
-| `HardeningFlowIT` | 6 | Custom alias honored/conflict/reserved, SSRF rejection at the API layer, expired/deactivated → 410 |
-| `RateLimitFlowIT` | 1 | Exceeding the create rate limit → 429, in its own tightly-configured context |
+| `ShortCodeGeneratorTest` | 4 | Pure logic, no dependencies at all |
+| `UrlSafetyValidatorTest` | 6 | Pure logic (does real DNS resolution for the SSRF check, but touches no database) |
+| `ShortUrlServiceTest` | 13 | Mocks `ShortUrlRepository` and `UrlSafetyValidator`; simulates the `IDENTITY`-generated id via `ReflectionTestUtils` since there's no real insert to produce one |
+| `AnalyticsServiceTest` | 2 | Mocks `ShortUrlRepository` and `ClickEventRepository`; feeds synthetic `Object[]` rows shaped like what the native queries would return |
+| `ClickTrackingServiceTest` | 2 | Mocks `ClickEventRepository`; verifies failures are swallowed, not propagated |
+| `ShortUrlControllerTest` | 9 | Mocks `ShortUrlService`; standalone MockMvc with `GlobalExceptionHandler` wired in manually |
+| `RedirectControllerTest` | 4 | Mocks `ShortUrlService` and `ClickTrackingService` |
+| `AnalyticsControllerTest` | 2 | Mocks `AnalyticsService` |
+| `HomeControllerTest` | 1 | No mocks needed — reads the real static file from the classpath, not a DB |
+| `GlobalExceptionHandlerTest` | 4 | Calls handler methods directly; covers branches standalone MockMvc can't naturally trigger (`NoResourceFoundException`, the generic catch-all) |
+| `RateLimitFilterTest` | 4 | No Spring/MockMvc at all — mocked `HttpServletRequest`/`Response`/`FilterChain` calling the filter directly |
 
-## Why async click-tracking tests aren't flaky
+## What this trade-off actually costs
 
-`ClickTrackingService.recordClick` is `@Async` in production so it never adds latency to a redirect
-response. Testing this without either sleeping (slow, still technically racy) or polling
-(`Awaitility`, adds a dependency) is done by swapping the named executor bean
-(`clickTrackingExecutor`) for a `SyncTaskExecutor` in a `@TestConfiguration` scoped to
-`AnalyticsFlowIT` only — the click write completes synchronously within the test's HTTP call, so
-the analytics assertions that follow are deterministic.
+Mocking at the repository boundary proves the *service and controller logic* is correct in
+isolation. It does **not** prove:
 
-## Why the rate-limit test has its own Spring context
+- **The native SQL in `ClickEventRepository` is actually valid** — `CAST(clicked_at AS DATE)`,
+  `COALESCE`, `GROUP BY`, `LIMIT`. `AnalyticsServiceTest` feeds the service pre-shaped `Object[]`
+  rows; it never executes that query against a real (or in-memory) database, so a typo or an
+  H2/Postgres dialect incompatibility in that SQL would not be caught by any test in this suite.
+- **The Flyway migrations (`V1`–`V3`) actually produce a schema the JPA entities can map onto** —
+  column names, types, and constraints are asserted nowhere.
+- **The alias-uniqueness DB constraint actually exists and works** — `ShortUrlServiceTest` proves
+  the service *reacts correctly* to a `DataIntegrityViolationException`, by throwing one from a
+  mock. It does not prove a real duplicate insert against the real schema actually throws one.
+- **`@Cacheable`/`@CacheEvict`/`@Async` actually behave correctly as a live Spring AOP proxy** —
+  these tests call the annotated methods directly on a plain Java object, so the caching and async
+  dispatch behavior described in `docs/ARCHITECTURE.md` (the 30s-TTL cache/expiry interaction, for
+  example) is asserted by nothing here. That fix is still correct — reasoned through and reviewed
+  before it shipped (see `docs/SCENARIOS.md`) — but no automated test currently proves it holds.
+- **The full HTTP stack wiring** — filters, `DispatcherServlet` routing, static-resource fallback.
+  The root-path routing bug (`docs/SCENARIOS.md`, Scenario 3, Bug 3) was found by running the real
+  application, not by a test, and standalone MockMvc — unlike a full Spring context — can't
+  reproduce that class of bug at all (there's no static-resource handler or `DispatcherServlet`
+  registered to collide with a controller's mapping).
 
-`RateLimitFilter` holds its token buckets as singleton in-memory state for the lifetime of the
-Spring context. Sharing one low-capacity config across every `*IT` class would make unrelated tests
-fail depending on execution order and how many `POST /api/urls` calls preceded them. Instead:
-the shared `test` profile uses a high capacity (100/min) so ordinary tests never hit the limit, and
-`RateLimitFlowIT` overrides it down to 2/min via `@TestPropertySource`, which gives it a distinct
-Spring context (and therefore a fresh, isolated `RateLimitFilter` instance) from every other test
-class.
+This is an accepted, explicit trade-off, not an oversight: every test runs in well under a second
+combined, has no external dependency, and pinpoints failures precisely to one class. The cost is
+that the properties above are now verified only by manual testing (see below) and by having been
+reasoned through carefully once, not by anything that runs on every `mvn verify`.
 
-## Manual / exploratory testing
+## Manual verification (fills the gap above)
 
-Automated tests don't replace running the actual application. After each phase, the app was started
-with `mvn spring-boot:run` and exercised end-to-end with curl: create, redirect, analytics, SSRF
-rejection, custom alias, duplicate alias, deactivate, expired link, unknown code, the static demo
-page, and Swagger UI. This is what caught the root-path routing bug documented in
-`docs/SCENARIOS.md` (Scenario 3, Bug 3) — no automated test exercised bare `GET /` before that
-manual pass, and it's now a regression test.
-
-## What's not covered, and why
-
-| Gap | Why it's not covered | Risk if unaddressed |
-|---|---|---|
-| Load/concurrency testing (e.g. concurrent custom-alias claims under real parallelism) | The race is handled by a DB unique constraint + catch, but no test drives actual concurrent requests to prove it under load | Low — the constraint is the real correctness guarantee regardless of test coverage; a load test would add confidence, not correctness |
-| Postgres-profile integration tests | Tests run against H2 only; Postgres is reachable via `docker-compose` but CI/test suite doesn't spin it up | Medium — a dialect-specific SQL issue in Postgres wouldn't be caught until manual verification; mitigated by using only ANSI-standard SQL in migrations and native queries |
-| Cache TTL behavior (that a link actually becomes unreachable after the 30s window closes) | Would require a real-time sleep in the test suite, which is slow and flaky by nature | Low — the TTL value itself is straightforward config; the eviction *logic* is exercised by `deactivatedLinkReturnsGone` (explicit eviction path) |
-| Rate limiter behavior across multiple app instances | Single-instance in-memory design, documented as a known scale-out limitation, not built | See `docs/ARCHITECTURE.md` |
-| OWASP dependency-check / SCA scanning | Not wired into the local build — would need network access during `mvn verify`, which would make the "runs offline, zero setup" story for a reviewer less reliable | Recommended as a CI-only gate, not a local one — noted here rather than silently skipped |
-| Coverage threshold enforcement | JaCoCo report is generated but not gated on a minimum percentage | For a 2–3 day prototype, a hard threshold risks encouraging low-value tests written to hit a number; the actual test list above was chosen to cover behavior, not a percentage |
+Because the automated suite no longer touches a real database, the things it can't verify were
+checked manually against the running application (`mvn spring-boot:run`, real H2 file-mode DB, real
+Flyway migrations): create → redirect → analytics → SSRF rejection → custom alias → duplicate-alias
+409 → deactivate → 410 → unknown code → 404 → the malformed-path 404 fix → the root-path demo-page
+fix → Swagger UI. This is a one-time manual pass per change, not a repeatable gate — if this
+project grows past a prototype, re-introducing a smaller set of true integration tests (even just
+one, covering the create→redirect round trip against a real database) would be the natural next
+step to close this gap with something that runs automatically. Not done here because it was an
+explicit, deliberate scope decision for this iteration.
 
 ## Running the tests
 
@@ -70,5 +81,6 @@ manual pass, and it's now a regression test.
 mvn verify
 ```
 
-Runs unit tests, integration tests, the Spotless format check, and generates the JaCoCo report
-(`target/site/jacoco/index.html`) — this is the single command that gates all three phases.
+Runs all unit tests (Surefire), the Spotless format check, and generates a JaCoCo coverage report
+at `target/site/jacoco/index.html`. There is no Failsafe/`*IT` phase any more — nothing to run one
+against.

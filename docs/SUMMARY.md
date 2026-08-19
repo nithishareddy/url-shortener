@@ -26,8 +26,8 @@ first, and the cache/expiry interaction was reasoned through specifically becaus
   `GET /api/urls/{shortCode}/analytics`, `DELETE /api/urls/{shortCode}`, `GET /actuator/health`.
 - OpenAPI schema + Swagger UI (`springdoc`) at `/swagger-ui/index.html`.
 - Minimal static demo page at `/` for a browser click-through without curl/Postman.
-- 24 automated tests (unit + integration), all green under `mvn verify` alongside a format check
-  (Spotless) and coverage report (JaCoCo).
+- 51 automated unit tests (Mockito-mocked, no database — see `docs/TESTING.md` for the trade-off),
+  all green under `mvn verify` alongside a format check (Spotless) and coverage report (JaCoCo).
 - `docs/ARCHITECTURE.md`, `docs/SCENARIOS.md`, `docs/ENGINEERING_LOG.md`, `docs/TESTING.md`, this
   file, and the root `README.md` (setup instructions).
 
@@ -58,8 +58,11 @@ first, and the cache/expiry interaction was reasoned through specifically becaus
 
 - Not load-tested; correctness under concurrency is argued from the DB constraint (alias race) and
   transaction boundaries (short-code generation), not proven under generated load.
-- Integration tests run against H2 only; Postgres compatibility is argued from using only
-  ANSI-standard SQL, not proven by a Postgres-backed test run.
+- No automated test executes against a real database at all (a deliberate, later decision — the
+  suite was fully rewritten to Mockito-mocked unit tests; see `docs/TESTING.md` and
+  `docs/ENGINEERING_LOG.md`, "Mid-project test-strategy pivot"). The native SQL, the Flyway schema,
+  Postgres compatibility, and the `@Cacheable`/`@Async` proxy behavior are verified by manual
+  testing against the running app, not by anything that runs on every `mvn verify`.
 - No CI pipeline configured — `mvn verify` is the quality gate, run locally; OWASP dependency-check
   is documented as a recommended CI-only addition rather than wired into the local build (would
   require network access, undermining the "runs offline, zero setup" goal for a reviewer).
