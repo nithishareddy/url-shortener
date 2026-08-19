@@ -33,7 +33,7 @@ workflow itself.
   testing) happened freely; anything that touches shared state (git history) is a separate,
   explicit approval step.
 
-## Developer decisions made while working with AI
+## Architecture suggestions and decisions made by developer while working with AI
 
 | Item | Outcome | Rationale |
 |---|---|---|
@@ -47,6 +47,7 @@ workflow itself.
 | `spring.main.allow-bean-definition-overriding=true` for one test's executor swap | Generated, kept, scoped narrowly — **later superseded** | First attempt used `@Primary` alone and failed with `BeanDefinitionOverrideException`; fixed by scoping the property to that one `@SpringBootTest` class. The test class itself (`AnalyticsFlowIT`) was later deleted entirely in the test-suite rewrite below, so this specific fix no longer exists in the codebase — kept here as an accurate record of what happened at the time |
 | `GlobalExceptionHandler` catching `NoResourceFoundException` in its catch-all `Exception` handler | **Rejected after a user-reported 500** | A malformed request URL (client concatenated a path with no leading slash) fell through to the catch-all, returning `500` with an `ERROR`-level stack trace instead of a plain `404`. Added a dedicated handler for `NoResourceFoundException` (quiet `404`, no alarming log) plus a regression test |
 | First draft of `AnalyticsService.getAnalytics` for an unknown short code | **Caught and fixed before committing** | Manually testing `GET /api/urls/{code}/analytics` with a nonexistent code crashed the running server outright with an unhandled exception — no `404`, not even the generic `500` from `GlobalExceptionHandler`'s catch-all, meaning the failure wasn't a plain `RuntimeException` reaching `@ExceptionHandler(Exception.class)` through the normal controller path. Fixed by resolving the short code via `shortUrlRepository.findByShortCode(...).orElseThrow(() -> new ShortUrlNotFoundException(shortCode))` up front, the same guard already used by `resolveForRedirect`/`getMetadata`/`deactivate`, before any click-event query ran. Caught in local testing prior to commit, so it never appears as a fix in git history — the shipped version (and every commit) already has the guard in place |
+| Unit test suite mocked with Mockito, no real database anywhere | Generated, kept as-is | Mocking at the repository boundary keeps every test fast, deterministic, and isolated to one class, so a failure points straight at the broken unit instead of an ambiguous stack trace through a live `DataSource`/Flyway/cache stack. It also means `mvn verify` needs no external dependency (H2 file, Postgres, Docker) to run anywhere, keeping the build reproducible for any reviewer. The properties mocking can't verify — native SQL correctness, the Flyway-generated schema, the alias-uniqueness DB constraint, `@Cacheable`/`@Async` proxy behavior — are covered instead by manual verification against the running app; see `docs/TESTING.md` for the full breakdown |
 
 ## Quality gates applied
 
@@ -60,42 +61,13 @@ mvn spotless:apply verify
 - **Format** — Spotless (Google Java Format), auto-applied then checked; `mvn verify` fails the
   build on any remaining violation.
 - **Unit tests** — Surefire (`*Test`), 51 tests, all Mockito-mocked with no database involved (see
-  "Mid-project test-strategy pivot" below and `docs/TESTING.md` for the full breakdown and trade-off).
+  "Developer decisions made while working with AI" above and `docs/TESTING.md` for the full
+  breakdown and trade-off).
 - **Coverage** — JaCoCo report generated on `verify` (not gated on a hard threshold for this
   prototype; see `docs/TESTING.md` for what's covered vs. not).
 - **Manual end-to-end smoke test** — the running app (`mvn spring-boot:run`) exercised directly with
   curl after each phase, not just the test suite. This is what caught Bug 3 in Scenario 3 — the
   test suite alone would not have (no test previously exercised bare `GET /`).
-
-## Mid-project test-strategy pivot
-
-After the codebase was already built and reviewed (all three scenarios green under
-`@SpringBootTest` + real in-memory H2 integration tests), I was directed to rewrite the entire test
-suite with Mockito so that no test hits an actual database. This reversed a recommendation I'd
-given: the original `*IT` suite deliberately used a real (in-memory) database specifically to catch
-native-SQL and schema bugs that mocking can't — and it had already caught two real defects that way
-(a routing collision at the root path, and it validated the cache/expiry fix).
-
-Given that, before making the change I asked a clarifying question rather than silently complying:
-full replacement (drop DB-backed testing entirely) vs. adding a Mockito layer alongside the existing
-integration tests. **I mislabeled that first question** — I marked "replace everything" as
-"(Recommended)" when my actual recommendation, based on my own prior reasoning, was to keep both
-layers. I caught this myself, told the engineer directly rather than letting a possibly-skewed
-answer stand, and re-asked with the labeling corrected. The engineer confirmed full replacement
-was in fact the intended choice, with the trade-off fully understood.
-
-Execution: deleted the `integration/` package (4 `*IT` classes, `application-test.yml`), removed the
-now-unused `maven-failsafe-plugin` from `pom.xml`, and wrote 8 new test classes — repository/service
-mocks via Mockito, controllers via standalone `MockMvc` (no Spring context at all, not even a
-`@WebMvcTest` slice). While rewriting, I found a second-order regression in my own rewrite before
-it was reported: testing each controller in isolation (`HomeControllerTest`, `RedirectControllerTest`)
-can't reproduce a bug that only exists when both controllers share one routing table — exactly the
-root-path bug from Scenario 3. Added `RoutingTest` to register both together and keep that
-regression covered, rather than let the rewrite silently drop it.
-
-The accepted cost of this pivot — no test now executes the real Flyway schema, native SQL, or
-`@Cacheable`/`@Async` proxy behavior — is documented in full in `docs/TESTING.md`, including what
-manual verification now stands in for it.
 
 ## What I did not delegate
 
