@@ -170,8 +170,10 @@ docs/                              architecture, scenarios, engineering log, tes
 
 ## Learn more
 
-- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — how the system is designed and why
-- [`docs/SCENARIOS.md`](docs/SCENARIOS.md) — the three build phases in detail
-- [`docs/ENGINEERING_LOG.md`](docs/ENGINEERING_LOG.md) — what was AI-generated vs. hand-reviewed/changed
-- [`docs/TESTING.md`](docs/TESTING.md) — testing approach and known gaps
-- [`docs/SUMMARY.md`](docs/SUMMARY.md) — risks, trade-offs, and assumptions
+| Document | Path | What's in it |
+|---|---|---|
+| Architecture | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | How the system is designed and why |
+| Scenarios | [`docs/SCENARIOS.md`](docs/SCENARIOS.md) | The three build phases in detail |
+| Engineering log | [`docs/ENGINEERING_LOG.md`](docs/ENGINEERING_LOG.md) | What was AI-generated vs. hand-reviewed/changed |
+| Testing | [`docs/TESTING.md`](docs/TESTING.md) | Testing approach and known gaps |
+| Summary | [`docs/SUMMARY.md`](docs/SUMMARY.md) | Risks, trade-offs, and assumptions |
