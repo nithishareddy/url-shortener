@@ -57,11 +57,11 @@ first, and the cache/expiry interaction was reasoned through specifically becaus
 
 - Not load-tested; correctness under concurrency is argued from the DB constraint (alias race) and
   transaction boundaries (short-code generation), not proven under generated load.
-- No automated test executes against a real database at all (a deliberate, later decision — the
-  suite was fully rewritten to Mockito-mocked unit tests; see `docs/TESTING.md` and
-  `docs/ENGINEERING_LOG.md`, "Mid-project test-strategy pivot"). The native SQL, the Flyway schema,
-  Postgres compatibility, and the `@Cacheable`/`@Async` proxy behavior are verified by manual
-  testing against the running app, not by anything that runs on every `mvn verify`.
+- No automated test executes against a real database at all — the suite is fully Mockito-mocked
+  unit tests; see `docs/TESTING.md` and `docs/ENGINEERING_LOG.md`, "Developer decisions made while
+  working with AI." The native SQL, the Flyway schema, Postgres compatibility, and the
+  `@Cacheable`/`@Async` proxy behavior are verified by manual testing against the running app, not
+  by anything that runs on every `mvn verify`.
 - No CI pipeline configured — `mvn verify` is the quality gate, run locally; OWASP dependency-check
   is documented as a recommended CI-only addition rather than wired into the local build (would
   require network access, undermining the "runs offline, zero setup" goal for a reviewer).
