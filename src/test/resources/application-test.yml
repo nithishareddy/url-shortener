@@ -13,3 +13,9 @@ spring:
 
 app:
   base-url: http://localhost:8080
+  rate-limit:
+    create:
+      capacity: 100
+      refill-tokens: 100
+      refill-duration-seconds: 60
+  reserved-aliases: api,health,actuator,swagger-ui,v3,static,favicon.ico

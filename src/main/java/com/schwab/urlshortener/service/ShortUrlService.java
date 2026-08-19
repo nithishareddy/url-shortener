@@ -1,34 +1,73 @@
 package com.schwab.urlshortener.service;
 
+import com.schwab.urlshortener.config.AppProperties;
+import com.schwab.urlshortener.config.CacheConfig;
 import com.schwab.urlshortener.domain.ShortUrl;
 import com.schwab.urlshortener.dto.CreateShortUrlRequest;
-import com.schwab.urlshortener.exception.InvalidUrlException;
+import com.schwab.urlshortener.exception.AliasConflictException;
+import com.schwab.urlshortener.exception.InvalidAliasException;
+import com.schwab.urlshortener.exception.ShortUrlGoneException;
 import com.schwab.urlshortener.exception.ShortUrlNotFoundException;
+import com.schwab.urlshortener.exception.UnsafeUrlException;
 import com.schwab.urlshortener.repository.ShortUrlRepository;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.util.Set;
+import org.springframework.cache.annotation.CacheEvict;
+import org.springframework.cache.annotation.Cacheable;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class ShortUrlService {
 
-  private static final Set<String> ALLOWED_SCHEMES = Set.of("http", "https");
-
   private final ShortUrlRepository repository;
   private final ShortCodeGenerator codeGenerator;
+  private final UrlSafetyValidator safetyValidator;
+  private final AppProperties appProperties;
 
-  public ShortUrlService(ShortUrlRepository repository, ShortCodeGenerator codeGenerator) {
+  public ShortUrlService(
+      ShortUrlRepository repository,
+      ShortCodeGenerator codeGenerator,
+      UrlSafetyValidator safetyValidator,
+      AppProperties appProperties) {
     this.repository = repository;
     this.codeGenerator = codeGenerator;
+    this.safetyValidator = safetyValidator;
+    this.appProperties = appProperties;
   }
 
   @Transactional
   public ShortUrl create(CreateShortUrlRequest request) {
-    validateUrlFormat(request.longUrl());
+    var validation = safetyValidator.validate(request.longUrl());
+    if (!validation.valid()) {
+      throw new UnsafeUrlException(validation.reason());
+    }
 
-    ShortUrl shortUrl = new ShortUrl(request.longUrl());
+    boolean useCustomAlias = request.customAlias() != null && !request.customAlias().isBlank();
+    return useCustomAlias
+        ? createWithCustomAlias(request, request.customAlias())
+        : createWithGeneratedCode(request);
+  }
+
+  private ShortUrl createWithCustomAlias(CreateShortUrlRequest request, String alias) {
+    if (appProperties.reservedAliases().contains(alias.toLowerCase())) {
+      throw new InvalidAliasException("Alias '" + alias + "' is reserved");
+    }
+    if (repository.existsByShortCode(alias)) {
+      throw new AliasConflictException(alias);
+    }
+    ShortUrl shortUrl = new ShortUrl(request.longUrl(), true, request.expiresAt());
+    shortUrl.setShortCode(alias);
+    try {
+      return repository.saveAndFlush(shortUrl);
+    } catch (DataIntegrityViolationException e) {
+      // Race: two requests claimed the same alias concurrently; the unique constraint is the
+      // source of truth, this catch just turns it into the same 409 as the pre-check above.
+      throw new AliasConflictException(alias);
+    }
+  }
+
+  private ShortUrl createWithGeneratedCode(CreateShortUrlRequest request) {
+    ShortUrl shortUrl = new ShortUrl(request.longUrl(), false, request.expiresAt());
     // IDENTITY generation forces the INSERT here so we have an id to encode; the row lands
     // fully-formed once the code is set below and the transaction commits.
     repository.saveAndFlush(shortUrl);
@@ -36,28 +75,33 @@ public class ShortUrlService {
     return shortUrl;
   }
 
+  @Cacheable(cacheNames = CacheConfig.SHORT_URL_LOOKUP_CACHE, key = "#shortCode")
   @Transactional(readOnly = true)
   public ShortUrl resolveForRedirect(String shortCode) {
-    return repository.findByShortCode(shortCode).orElseThrow(() -> new ShortUrlNotFoundException(shortCode));
+    ShortUrl shortUrl =
+        repository
+            .findByShortCode(shortCode)
+            .orElseThrow(() -> new ShortUrlNotFoundException(shortCode));
+    if (!shortUrl.isRedirectable()) {
+      throw new ShortUrlGoneException(shortCode);
+    }
+    return shortUrl;
   }
 
   @Transactional(readOnly = true)
   public ShortUrl getMetadata(String shortCode) {
-    return repository.findByShortCode(shortCode).orElseThrow(() -> new ShortUrlNotFoundException(shortCode));
+    return repository
+        .findByShortCode(shortCode)
+        .orElseThrow(() -> new ShortUrlNotFoundException(shortCode));
   }
 
-  private void validateUrlFormat(String rawUrl) {
-    URI uri;
-    try {
-      uri = new URI(rawUrl);
-    } catch (URISyntaxException e) {
-      throw new InvalidUrlException("Malformed URL");
-    }
-    if (uri.getScheme() == null || !ALLOWED_SCHEMES.contains(uri.getScheme().toLowerCase())) {
-      throw new InvalidUrlException("Only http and https URLs are allowed");
-    }
-    if (uri.getHost() == null || uri.getHost().isBlank()) {
-      throw new InvalidUrlException("URL must include a host");
-    }
+  @CacheEvict(cacheNames = CacheConfig.SHORT_URL_LOOKUP_CACHE, key = "#shortCode")
+  @Transactional
+  public void deactivate(String shortCode) {
+    ShortUrl shortUrl =
+        repository
+            .findByShortCode(shortCode)
+            .orElseThrow(() -> new ShortUrlNotFoundException(shortCode));
+    shortUrl.deactivate();
   }
 }

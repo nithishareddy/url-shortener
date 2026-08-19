@@ -19,6 +19,7 @@
 
   <properties>
     <java.version>21</java.version>
+    <bucket4j.version>8.14.0</bucket4j.version>
     <springdoc.version>2.6.0</springdoc.version>
   </properties>
 
@@ -39,6 +40,10 @@
       <groupId>org.springframework.boot</groupId>
       <artifactId>spring-boot-starter-actuator</artifactId>
     </dependency>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-cache</artifactId>
+    </dependency>
 
     <dependency>
       <groupId>com.h2database</groupId>
@@ -53,6 +58,17 @@
     <dependency>
       <groupId>org.flywaydb</groupId>
       <artifactId>flyway-core</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.github.ben-manes.caffeine</groupId>
+      <artifactId>caffeine</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>com.bucket4j</groupId>
+      <artifactId>bucket4j_jdk11-core</artifactId>
+      <version>${bucket4j.version}</version>
     </dependency>
 
     <dependency>

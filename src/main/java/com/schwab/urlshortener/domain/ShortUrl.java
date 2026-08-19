@@ -25,11 +25,35 @@ public class ShortUrl {
   @Column(name = "created_at", nullable = false)
   private Instant createdAt;
 
+  @Column(name = "custom_alias", nullable = false)
+  private boolean customAlias;
+
+  @Column(name = "expires_at")
+  private Instant expiresAt;
+
+  @Column(name = "active", nullable = false)
+  private boolean active = true;
+
   protected ShortUrl() {}
 
   public ShortUrl(String longUrl) {
+    this(longUrl, false, null);
+  }
+
+  public ShortUrl(String longUrl, boolean customAlias, Instant expiresAt) {
     this.longUrl = longUrl;
+    this.customAlias = customAlias;
+    this.expiresAt = expiresAt;
     this.createdAt = Instant.now();
+    this.active = true;
+  }
+
+  public boolean isExpired() {
+    return expiresAt != null && Instant.now().isAfter(expiresAt);
+  }
+
+  public boolean isRedirectable() {
+    return active && !isExpired();
   }
 
   public Long getId() {
@@ -50,5 +74,21 @@ public class ShortUrl {
 
   public Instant getCreatedAt() {
     return createdAt;
+  }
+
+  public boolean isCustomAlias() {
+    return customAlias;
+  }
+
+  public Instant getExpiresAt() {
+    return expiresAt;
+  }
+
+  public boolean isActive() {
+    return active;
+  }
+
+  public void deactivate() {
+    this.active = false;
   }
 }

@@ -26,13 +26,15 @@ class ShortUrlFlowIT {
 
   @Test
   void createThenRedirect() throws Exception {
-    String body = objectMapper.writeValueAsString(new CreateRequest("https://example.com/some/long/path"));
+    String body =
+        objectMapper.writeValueAsString(new CreateRequest("https://example.com/some/long/path"));
 
     String shortCode =
         objectMapper
             .readTree(
                 mockMvc
-                    .perform(post("/api/urls").contentType(MediaType.APPLICATION_JSON).content(body))
+                    .perform(
+                        post("/api/urls").contentType(MediaType.APPLICATION_JSON).content(body))
                     .andExpect(status().isCreated())
                     .andExpect(jsonPath("$.shortUrl").value(startsWith("http://localhost:8080/")))
                     .andReturn()
@@ -68,6 +70,16 @@ class ShortUrlFlowIT {
   @Test
   void redirectForUnknownCodeReturns404() throws Exception {
     mockMvc.perform(get("/{shortCode}", "doesNotExist")).andExpect(status().isNotFound());
+  }
+
+  @Test
+  void rootServesDemoPageInsteadOfBeingSwallowedByRedirectRoute() throws Exception {
+    // Regression test: the "/{shortCode}" pattern used to shadow static resource resolution for
+    // "/", making the redirect route 404 on a bogus "index.html" short code. See HomeController.
+    mockMvc
+        .perform(get("/"))
+        .andExpect(status().isOk())
+        .andExpect(header().string("Content-Type", startsWith(MediaType.TEXT_HTML_VALUE)));
   }
 
   private record CreateRequest(String longUrl) {}

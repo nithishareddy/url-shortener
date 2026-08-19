@@ -16,7 +16,8 @@ public class RedirectController {
   private final ShortUrlService shortUrlService;
   private final ClickTrackingService clickTrackingService;
 
-  public RedirectController(ShortUrlService shortUrlService, ClickTrackingService clickTrackingService) {
+  public RedirectController(
+      ShortUrlService shortUrlService, ClickTrackingService clickTrackingService) {
     this.shortUrlService = shortUrlService;
     this.clickTrackingService = clickTrackingService;
   }
@@ -25,7 +26,9 @@ public class RedirectController {
   public ResponseEntity<Void> redirect(@PathVariable String shortCode, HttpServletRequest request) {
     var shortUrl = shortUrlService.resolveForRedirect(shortCode);
     clickTrackingService.recordClick(
-        shortUrl.getId(), request.getHeader(HttpHeaders.REFERER), request.getHeader(HttpHeaders.USER_AGENT));
+        shortUrl.getId(),
+        request.getHeader(HttpHeaders.REFERER),
+        request.getHeader(HttpHeaders.USER_AGENT));
     return ResponseEntity.status(HttpStatus.FOUND)
         .header(HttpHeaders.LOCATION, shortUrl.getLongUrl())
         .build();
