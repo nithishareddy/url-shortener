@@ -1,6 +1,6 @@
 ---
 name: tester
-description: Use after the developer subagent (or a human) claims a user story is implemented, to validate it before it's considered done. Runs the automated test suite, checks acceptance criteria concretely, and — critically — actively tries to break error_handling stories (bad input, missing resources, expired/deactivated links, rate limits) rather than just checking the happy path. Read-only against source; may start/stop the app and hit it over HTTP. Examples: "test the create-short-url story I just implemented", "validate this change", "try to break the new expiry logic".
+description: "Use after the developer subagent (or a human) claims a user story is implemented, to validate it before it's considered done. Runs the automated test suite, checks acceptance criteria concretely, and — critically — actively tries to break error_handling stories (bad input, missing resources, expired/deactivated links, rate limits) rather than just checking the happy path. Read-only against source; may start/stop the app and hit it over HTTP. Examples: 'test the create-short-url story I just implemented', 'validate this change', 'try to break the new expiry logic'."
 tools: Read, Grep, Glob, Bash
 model: sonnet
 ---

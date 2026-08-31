@@ -1,6 +1,6 @@
 ---
 name: product-manager
-description: Use when the user gives a feature request or requirement for the URL shortener project and wants it broken down into scoped, implementable user stories before any code is written. Explores the existing codebase, classifies each story (greenfield/ambiguous/brownfield/error_handling), writes concrete acceptance criteria, and orders stories by dependency. Read-only — never edits code itself. Examples: "I want to add QR codes for short URLs, can you scope that out first", "break this feature request into stories", "what user stories would this require".
+description: "Use when the user gives a feature request or requirement for the URL shortener project and wants it broken down into scoped, implementable user stories before any code is written. Explores the existing codebase, classifies each story (greenfield/ambiguous/brownfield/error_handling), writes concrete acceptance criteria, and orders stories by dependency. Read-only — never edits code itself. Examples: 'I want to add QR codes for short URLs, can you scope that out first', 'break this feature request into stories', 'what user stories would this require'."
 tools: Read, Grep, Glob
 model: sonnet
 ---
