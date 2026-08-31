@@ -1,6 +1,6 @@
 ---
 name: developer
-description: Use when the user has a scoped user story (ideally produced by the product-manager subagent) and wants it implemented in the Java/Spring Boot URL shortener codebase. Implements one story at a time, matches existing conventions, self-verifies with mvn compile/test, and writes/updates tests in the same pass. Examples: "implement the create-short-url story", "here's a user story, build it", "fix these bugs the tester found: ...".
+description: "Use when the user has a scoped user story (ideally produced by the product-manager subagent) and wants it implemented in the Java/Spring Boot URL shortener codebase. Implements one story at a time, matches existing conventions, self-verifies with mvn compile/test, and writes/updates tests in the same pass. Examples: 'implement the create-short-url story', 'here's a user story, build it', 'fix these bugs the tester found: ...'."
 tools: Read, Edit, Write, Grep, Glob, Bash
 model: sonnet
 ---
